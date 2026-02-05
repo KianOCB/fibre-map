@@ -13,7 +13,6 @@
         body { margin: 0; padding: 0; height: 100vh; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
         #map { position: absolute; top: 0; bottom: 0; width: 100%; }
         
-        /* FLOATING SEARCH BAR */
         .mapboxgl-ctrl-geocoder {
             position: absolute !important; top: 20px; left: 50%; transform: translateX(-50%);
             width: 90%; max-width: 400px; z-index: 100; 
@@ -21,9 +20,7 @@
             border-radius: 30px !important;
         }
         .mapboxgl-ctrl-geocoder--input { padding-left: 40px !important; border-radius: 30px !important; height: 45px !important; }
-        .mapboxgl-ctrl-geocoder--icon { top: 12px !important; }
-
-        /* POPUP STYLING */
+        
         .mapboxgl-popup-content { padding: 20px; text-align: center; border-radius: 12px; font-family: 'Segoe UI', sans-serif; min-width: 240px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); }
         .connect-btn {
             background-color: #28a745; color: white; border: none; padding: 10px 0;
@@ -36,24 +33,12 @@
 <body>
     <div id="map"></div>
     <script>
-    // 1. CONFIGURATION
     mapboxgl.accessToken = 'pk.eyJ1Ijoia2lhbmdvZ2xlIiwiYSI6ImNtbDluZ2d3bzA0ZGQzbHF1anFkZmFzYXoifQ.KOCzNuYVq65mO6RsP1Pkmw'; 
     var TILESET_ID = 'kiangogle.3r8297nc';
     var SOURCE_LAYER_NAME = 'MyOwn_ISP_Coverage_POC';
-
-    // 2. FORM URL (The destination)
-    var CONFIG = {
-        baseUrl: "https://creatorapp.zoho.com/oceanblu813/environment/development/isp-management/#Form:New_Orders",
-        fields: {
-            address: "Address_Line_1",   
-            provider: "Network_Provider",
-            zone: "Zone_Category"
-        }
-    };
     
     var selectedData = {};
 
-    // 3. INIT MAP
     const map = new mapboxgl.Map({
         container: 'map',
         style: 'mapbox://styles/mapbox/streets-v12',
@@ -65,9 +50,7 @@
 
     map.on('load', () => {
         map.addSource('my-isp-zones', { type: 'vector', url: 'mapbox://' + TILESET_ID });
-        // Invisible fill layer for click detection
         map.addLayer({ 'id': 'coverage-fill', 'type': 'fill', 'source': 'my-isp-zones', 'source-layer': SOURCE_LAYER_NAME, 'paint': { 'fill-color': '#28a745', 'fill-opacity': 0.0 } });
-        // Visible outline
         map.addLayer({ 'id': 'coverage-outline', 'type': 'line', 'source': 'my-isp-zones', 'source-layer': SOURCE_LAYER_NAME, 'paint': { 'line-color': '#28a745', 'line-width': 2 } });
     });
 
@@ -103,24 +86,22 @@
                 .setHTML(`
                     <h3 style="margin:0 0 5px 0; color:#28a745">✅ ${provider} Available!</h3>
                     <div style="font-size:12px;color:#666;margin-bottom:5px;">${addressText}</div>
-                    <button class="connect-btn" onclick="openOrderForm()">Get Connected</button>
+                    <button class="connect-btn" onclick="sendSignal()">Get Connected</button>
                 `)
                 .addTo(map);
         } else {
-            new mapboxgl.Popup({ closeButton: true })
-                .setLngLat(coords)
-                .setHTML(`<h3 style="margin:0; color:#dc3545">❌ No Coverage</h3><div style="font-size:12px;color:#666;margin-top:5px;">${addressText}</div>`)
-                .addTo(map);
+            new mapboxgl.Popup({ closeButton: true }).setLngLat(coords).setHTML(`<h3 style="margin:0; color:#dc3545">❌ No Coverage</h3><div style="font-size:12px;color:#666;margin-top:5px;">${addressText}</div>`).addTo(map);
         }
     }
 
-    // 4. OPEN FORM FUNCTION
-    window.openOrderForm = function() {
-        var url = CONFIG.baseUrl + 
-                  "?" + CONFIG.fields.address + "=" + encodeURIComponent(selectedData.address) +
-                  "&" + CONFIG.fields.provider + "=" + encodeURIComponent(selectedData.provider) +
-                  "&" + CONFIG.fields.zone + "=" + encodeURIComponent(selectedData.zone);
-        window.open(url, "_blank"); // Opens in new tab
+    // THE BRIDGE SIGNAL
+    window.sendSignal = function() {
+        console.log("Sending signal to Zoho Widget...");
+        // This sends the data 'up' to the iframe container (the Widget)
+        window.parent.postMessage({
+            type: "OPEN_ZOHO_FORM",
+            data: selectedData
+        }, "*");
     }
     </script>
 </body>
