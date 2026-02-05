@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Fibre Coverage Map</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+    
+    <link href="https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.css" rel="stylesheet">
+    <script src="https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.js"></script>
+    
+    <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.min.js"></script>
+    <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.css" type="text/css">
+
+    <style>
+        body { margin: 0; padding: 0; height: 100vh; font-family: 'Segoe UI', sans-serif; }
+        
+        /* 1. FULL SCREEN MAP */
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+
+        /* 2. FLOATING SEARCH BAR (Top Center) */
+        .mapboxgl-ctrl-geocoder {
+            position: absolute !important;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 400px;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+            border-radius: 25px !important;
+        }
+        .mapboxgl-ctrl-geocoder--input {
+            padding-left: 35px !important;
+            border-radius: 25px !important;
+        }
+
+        /* 3. POPUP STYLES */
+        .mapboxgl-popup-content {
+            padding: 20px;
+            text-align: center;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            font-family: 'Segoe UI', sans-serif;
+            min-width: 220px;
+        }
+        .popup-success h3 { margin: 0 0 5px 0; color: #28a745; font-size: 18px; }
+        .popup-fail h3 { margin: 0 0 5px 0; color: #dc3545; font-size: 18px; }
+        .popup-address { font-size: 13px; color: #666; margin-bottom: 15px; line-height: 1.4; }
+        
+        /* THE BUTTON */
+        .connect-btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        .connect-btn:hover { background-color: #0056b3; }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+
+    <script>
+    // 1. CONFIGURATION
+    mapboxgl.accessToken = 'pk.eyJ1Ijoia2lhbmdvZ2xlIiwiYSI6ImNtbDluZ2d3bzA0ZGQzbHF1anFkZmFzYXoifQ.KOCzNuYVq65mO6RsP1Pkmw'; 
+    var TILESET_ID = 'kiangogle.3r8297nc';
+    var SOURCE_LAYER_NAME = 'MyOwn_ISP_Coverage_POC';
+
+    // ZOHO FORM CONFIG
+    var CONFIG = {
+        baseUrl: "https://creatorapp.zoho.com/oceanblu813/environment/development/isp-management/#Form:New_Orders",
+        fields: {
+            address: "Address_Line_1",   
+            provider: "Network_Provider",
+            zone: "Zone_Category"
+        }
+    };
+    
+    var selectedData = {};
+
+    // 2. INITIALIZE MAP
+    const map = new mapboxgl.Map({
+        container: 'map',
+        style: 'mapbox://styles/mapbox/streets-v12',
+        center: [28.0567, -26.1076], // Sandton
+        zoom: 12,
+        attributionControl: false
+    });
+
+    // 3. SEARCH BAR (Floating)
+    const geocoder = new MapboxGeocoder({
+        accessToken: mapboxgl.accessToken,
+        mapboxgl: mapboxgl,
+        marker: false, 
+        placeholder: 'Search your address...'
+    });
+    document.getElementById('map').appendChild(geocoder.onAdd(map));
+
+    // 4. LOAD TILESET
+    map.on('load', () => {
+        map.addSource('my-isp-zones', { type: 'vector', url: 'mapbox://' + TILESET_ID });
+
+        map.addLayer({
+            'id': 'coverage-fill',
+            'type': 'fill',
+            'source': 'my-isp-zones',
+            'source-layer': SOURCE_LAYER_NAME,
+            'paint': { 'fill-color': '#28a745', 'fill-opacity': 0.0 } // Invisible fill
+        });
+        
+        map.addLayer({
+            'id': 'coverage-outline',
+            'type': 'line',
+            'source': 'my-isp-zones',
+            'source-layer': SOURCE_LAYER_NAME,
+            'paint': { 'line-color': '#28a745', 'line-width': 2 }
+        });
+    });
+
+    // 5. SEARCH LOGIC (Wait for Idle)
+    geocoder.on('result', function(e) {
+        var coords = e.result.geometry.coordinates; 
+        var addressName = e.result.place_name;
+
+        map.flyTo({ center: coords, zoom: 16 });
+        
+        map.once('idle', function() {
+            checkCoverageAtPoint(coords[0], coords[1], addressName);
+        });
+    });
+
+    // 6. CLICK LOGIC
+    map.on('click', (e) => {
+        fetch("https://api.mapbox.com/geocoding/v5/mapbox.places/" + e.lngLat.lng + "," + e.lngLat.lat + ".json?access_token=" + mapboxgl.accessToken)
+            .then(res => res.json())
+            .then(data => {
+                var address = data.features[0] ? data.features[0].place_name : "Pinned Location";
+                checkCoverageAtPoint(e.lngLat.lng, e.lngLat.lat, address);
+            });
+    });
+
+    // 7. CHECKER LOGIC & POPUP
+    function checkCoverageAtPoint(lng, lat, addressText) {
+        var point = map.project([lng, lat]);
+        var features = map.queryRenderedFeatures(point, { layers: ['coverage-fill'] });
+
+        // Remove old popups
+        var popups = document.getElementsByClassName('mapboxgl-popup');
+        while(popups[0]) { popups[0].remove(); }
+
+        if (features.length > 0) {
+            // SUCCESS
+            var props = features[0].properties;
+            var zone = props.Name || "Standard Zone";
+            var description = (props.Description || "").toLowerCase();
+            var provider = "MyOwn ISP"; 
+            
+            if(description.includes("ocean")) provider = "Ocean Blu";
+            if(description.includes("vuma")) provider = "Vumatel";
+            if(zone.toLowerCase().includes("vuma")) provider = "Vumatel";
+
+            selectedData = { provider: provider, zone: zone, address: addressText };
+
+            var popupHTML = `
+                <div class="popup-success">
+                    <h3>✅ Fibre Available!</h3>
+                    <div class="popup-address">${addressText}</div>
+                    <button class="connect-btn" onclick="openOrderForm()">Get Connected</button>
+                </div>
+            `;
+
+            new mapboxgl.Popup({ closeButton: true, maxWidth: '300px' })
+                .setLngLat([lng, lat])
+                .setHTML(popupHTML)
+                .addTo(map);
+
+        } else {
+            // FAIL
+            var failHTML = `
+                <div class="popup-fail">
+                    <h3>❌ No Coverage</h3>
+                    <div class="popup-address">${addressText}<br>Not currently in our network.</div>
+                </div>
+            `;
+            
+            new mapboxgl.Popup({ closeButton: true })
+                .setLngLat([lng, lat])
+                .setHTML(failHTML)
+                .addTo(map);
+        }
+    }
+
+    // 8. OPEN FORM
+    window.openOrderForm = function() {
+        var url = CONFIG.baseUrl + 
+                  "?" + CONFIG.fields.address + "=" + encodeURIComponent(selectedData.address) +
+                  "&" + CONFIG.fields.provider + "=" + encodeURIComponent(selectedData.provider) +
+                  "&" + CONFIG.fields.zone + "=" + encodeURIComponent(selectedData.zone);
+        window.open(url, "_blank");
+    }
+    </script>
+</body>
+</html>
