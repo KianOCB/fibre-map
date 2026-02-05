@@ -13,44 +13,62 @@
         body { margin: 0; padding: 0; height: 100vh; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
         #map { position: absolute; top: 0; bottom: 0; width: 100%; }
         
-        /* SEARCH BAR */
+        /* FLOATING SEARCH BAR */
         .mapboxgl-ctrl-geocoder {
-            position: absolute !important; top: 10px; left: 50%; transform: translateX(-50%);
-            width: 90%; max-width: 400px; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
-            border-radius: 25px !important;
+            position: absolute !important; top: 20px; left: 50%; transform: translateX(-50%);
+            width: 90%; max-width: 400px; z-index: 100; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15) !important;
+            border-radius: 30px !important;
         }
-        .mapboxgl-ctrl-geocoder--input { padding-left: 35px !important; border-radius: 25px !important; }
+        .mapboxgl-ctrl-geocoder--input { padding-left: 40px !important; border-radius: 30px !important; height: 45px !important; }
+        .mapboxgl-ctrl-geocoder--icon { top: 12px !important; }
 
-        /* POPUP */
-        .mapboxgl-popup-content { padding: 15px; text-align: center; border-radius: 8px; font-family: 'Segoe UI', sans-serif; min-width: 200px; }
+        /* POPUP STYLING */
+        .mapboxgl-popup-content { padding: 20px; text-align: center; border-radius: 12px; font-family: 'Segoe UI', sans-serif; min-width: 240px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); }
         .connect-btn {
-            background-color: #007bff; color: white; border: none; padding: 8px 20px;
-            border-radius: 4px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 8px;
+            background-color: #28a745; color: white; border: none; padding: 10px 0;
+            border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 12px;
+            font-size: 14px; transition: background 0.2s;
         }
-        .connect-btn:hover { background-color: #0056b3; }
+        .connect-btn:hover { background-color: #218838; }
     </style>
 </head>
 <body>
     <div id="map"></div>
     <script>
+    // 1. CONFIGURATION
     mapboxgl.accessToken = 'pk.eyJ1Ijoia2lhbmdvZ2xlIiwiYSI6ImNtbDluZ2d3bzA0ZGQzbHF1anFkZmFzYXoifQ.KOCzNuYVq65mO6RsP1Pkmw'; 
     var TILESET_ID = 'kiangogle.3r8297nc';
     var SOURCE_LAYER_NAME = 'MyOwn_ISP_Coverage_POC';
+
+    // 2. FORM URL (The destination)
+    var CONFIG = {
+        baseUrl: "https://creatorapp.zoho.com/oceanblu813/environment/development/isp-management/#Form:New_Orders",
+        fields: {
+            address: "Address_Line_1",   
+            provider: "Network_Provider",
+            zone: "Zone_Category"
+        }
+    };
     
     var selectedData = {};
 
+    // 3. INIT MAP
     const map = new mapboxgl.Map({
         container: 'map',
         style: 'mapbox://styles/mapbox/streets-v12',
         center: [28.0567, -26.1076], zoom: 12, attributionControl: false
     });
 
-    const geocoder = new MapboxGeocoder({ accessToken: mapboxgl.accessToken, mapboxgl: mapboxgl, marker: false, placeholder: 'Search Address...' });
+    const geocoder = new MapboxGeocoder({ accessToken: mapboxgl.accessToken, mapboxgl: mapboxgl, marker: false, placeholder: 'Search for your address...' });
     document.getElementById('map').appendChild(geocoder.onAdd(map));
 
     map.on('load', () => {
         map.addSource('my-isp-zones', { type: 'vector', url: 'mapbox://' + TILESET_ID });
+        // Invisible fill layer for click detection
         map.addLayer({ 'id': 'coverage-fill', 'type': 'fill', 'source': 'my-isp-zones', 'source-layer': SOURCE_LAYER_NAME, 'paint': { 'fill-color': '#28a745', 'fill-opacity': 0.0 } });
+        // Visible outline
+        map.addLayer({ 'id': 'coverage-outline', 'type': 'line', 'source': 'my-isp-zones', 'source-layer': SOURCE_LAYER_NAME, 'paint': { 'line-color': '#28a745', 'line-width': 2 } });
     });
 
     geocoder.on('result', function(e) {
@@ -74,31 +92,35 @@
 
         if (features.length > 0) {
             var props = features[0].properties;
-            var provider = "Ocean Blu"; // Default
+            var provider = "Ocean Blu"; 
             var desc = (props.Description || "").toLowerCase();
-            if(desc.includes("vuma")) provider = "Vumatel";
-            if(props.Name && props.Name.toLowerCase().includes("vuma")) provider = "Vumatel";
+            if(desc.includes("vuma") || (props.Name && props.Name.toLowerCase().includes("vuma"))) provider = "Vumatel";
 
             selectedData = { provider: provider, zone: props.Name || "Standard", address: addressText };
 
             new mapboxgl.Popup({ closeButton: true, maxWidth: '300px' })
                 .setLngLat(coords)
-                .setHTML(`<h3>✅ ${provider} Available!</h3><div style="font-size:12px;color:#666">${addressText}</div><button class="connect-btn" onclick="sendDataToZoho()">Get Connected</button>`)
+                .setHTML(`
+                    <h3 style="margin:0 0 5px 0; color:#28a745">✅ ${provider} Available!</h3>
+                    <div style="font-size:12px;color:#666;margin-bottom:5px;">${addressText}</div>
+                    <button class="connect-btn" onclick="openOrderForm()">Get Connected</button>
+                `)
                 .addTo(map);
         } else {
-            new mapboxgl.Popup({ closeButton: true }).setLngLat(coords).setHTML(`<h3>❌ No Coverage</h3><div style="font-size:12px;color:#666">${addressText}</div>`).addTo(map);
+            new mapboxgl.Popup({ closeButton: true })
+                .setLngLat(coords)
+                .setHTML(`<h3 style="margin:0; color:#dc3545">❌ No Coverage</h3><div style="font-size:12px;color:#666;margin-top:5px;">${addressText}</div>`)
+                .addTo(map);
         }
     }
 
-    // THE MAGIC BRIDGE: Sends data to the parent window (Zoho)
-    window.sendDataToZoho = function() {
-        // We use '*' to allow sending to Zoho, but ideally this would be the Zoho domain
-        window.parent.postMessage({
-            type: "coverage_update",
-            address: selectedData.address,
-            provider: selectedData.provider,
-            zone: selectedData.zone
-        }, "*"); 
+    // 4. OPEN FORM FUNCTION
+    window.openOrderForm = function() {
+        var url = CONFIG.baseUrl + 
+                  "?" + CONFIG.fields.address + "=" + encodeURIComponent(selectedData.address) +
+                  "&" + CONFIG.fields.provider + "=" + encodeURIComponent(selectedData.provider) +
+                  "&" + CONFIG.fields.zone + "=" + encodeURIComponent(selectedData.zone);
+        window.open(url, "_blank"); // Opens in new tab
     }
     </script>
 </body>
